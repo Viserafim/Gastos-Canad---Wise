@@ -11,3 +11,6 @@ PWA para duas pessoas, com funcionamento offline.
 - Cálculo de acerto
 - Backup/restauração
 - Service Worker offline
+
+
+V2.2: despesas compartilhadas descontam automaticamente a parcela de cada pessoa do saldo individual (50/50 ou divisão personalizada), mantendo o cálculo de acerto separado.
