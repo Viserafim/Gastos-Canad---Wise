@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Gastos CAD">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Controle de Gastos CAD</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f5f5f5}
+*{box-sizing:border-box}body{margin:0;padding:16px}.app{max-width:680px;margin:auto}
+.card{background:white;border:1px solid #ddd;border-radius:18px;padding:16px;margin:12px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{font-size:14px;font-weight:600;display:block}input,textarea{width:100%;margin-top:6px;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:16px;background:white}textarea{min-height:100px;resize:vertical}
+button{border:1px solid #ccc;background:white;border-radius:12px;padding:12px;font-size:15px;font-weight:600;min-height:44px;cursor:pointer}
+button.active{background:#e5e7eb;border-color:#111827}button.primary{width:100%;background:#111827;color:white;border-color:#111827}
+h1{font-size:25px;margin:4px 0}.muted{color:#6b7280;font-size:13px}.balance{font-size:23px;font-weight:800;margin-top:7px}
+.item{padding:12px 0;border-bottom:1px solid #eee;display:flex;justify-content:space-between;gap:12px}.item:last-child{border-bottom:0}
+.amount.in{color:#087443}.amount.out{color:#b42318}.actions{display:flex;gap:8px;flex-wrap:wrap}.small{font-size:13px;padding:8px 10px}
+@media(max-width:430px){body{padding:10px}.grid{grid-template-columns:1fr 1fr}.card{padding:13px;border-radius:15px}h1{font-size:23px}}
+</style>
+</head>
+<body>
+<div class="app">
+<header><h1>💰 Controle de Gastos CAD</h1><div class="muted">Offline • salvamento automático no aparelho</div></header>
+
+<div class="grid">
+<div class="card"><div class="muted" id="n1top">Pessoa 1</div><div class="balance" id="b1">CA$ 0.00</div><div class="muted" id="s1">Entradas CA$ 0.00 • Gastos CA$ 0.00</div></div>
+<div class="card"><div class="muted" id="n2top">Pessoa 2</div><div class="balance" id="b2">CA$ 0.00</div><div class="muted" id="s2">Entradas CA$ 0.00 • Gastos CA$ 0.00</div></div>
+</div>
+<div class="card"><div class="muted">Saldo total</div><div class="balance" id="total">CA$ 0.00</div></div>
+
+<div class="card">
+<h3>Saldo inicial</h3>
+<div class="grid">
+<label>Nome<input id="name1" value="Pessoa 1" maxlength="30"></label>
+<label>Valor CAD<input id="initial1" type="number" min="0" step="0.01" value="7000"></label>
+<label>Nome<input id="name2" value="Pessoa 2" maxlength="30"></label>
+<label>Valor CAD<input id="initial2" type="number" min="0" step="0.01" value="3000"></label>
+</div>
+</div>
+
+<form class="card" id="form">
+<h3>Novo lançamento</h3>
+<div class="actions">
+<button type="button" id="expense" class="active">➖ Compra / Saída</button>
+<button type="button" id="income">➕ Entrada</button>
+</div>
+<label style="margin-top:12px">Descrição<textarea id="desc" required maxlength="200" placeholder="Ex.: Jantar no restaurante, mercado, combustível, dinheiro recebido..."></textarea></label>
+<label style="margin-top:12px">Valor (CAD)<input id="value" required type="number" min="0.01" step="0.01" placeholder="0,00"></label>
+<div style="margin-top:12px;font-size:14px;font-weight:600">Quem realizou?</div>
+<div class="actions" style="margin-top:6px"><button type="button" id="p1" class="active" style="flex:1">Pessoa 1</button><button type="button" id="p2" style="flex:1">Pessoa 2</button></div>
+<button class="primary" id="add" style="margin-top:12px">Adicionar saída</button>
+<div class="muted" id="msg" aria-live="polite" style="margin-top:8px"></div>
+</form>
+
+<div class="card">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">Histórico</h3><button type="button" class="small" id="clear">Limpar tudo</button></div>
+<div id="history" style="margin-top:8px"></div>
+</div>
+
+<div class="card">
+<h3>Backup</h3>
+<div class="actions">
+<button type="button" id="export">📤 Exportar backup</button>
+<label class="small" style="display:inline-flex;align-items:center;border:1px solid #ccc;border-radius:12px;padding:8px 10px;cursor:pointer">📥 Importar backup<input id="import" type="file" accept=".json,application/json" style="display:none"></label>
+</div>
+<div class="muted" style="margin-top:8px">Recomendação: faça um backup antes de trocar de aparelho ou limpar os dados do navegador.</div>
+</div>
+</div>
+<script>
+const KEY="gastos-cad-pwa-v1";
+let state={name1:"Pessoa 1",name2:"Pessoa 2",initial1:7000,initial2:3000,entries:[],person:0,type:"expense"};
+try{const saved=JSON.parse(localStorage.getItem(KEY)||"null");if(saved)state={...state,...saved}}catch(e){}
+const $=id=>document.getElementById(id);
+const money=n=>new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD"}).format(Number(n)||0);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function save(){state.name1=$("name1").value.trim()||"Pessoa 1";state.name2=$("name2").value.trim()||"Pessoa 2";state.initial1=Math.max(0,Number($("initial1").value)||0);state.initial2=Math.max(0,Number($("initial2").value)||0);state.person=state.person;state.type=state.type;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){$("msg").textContent="Falha ao salvar localmente.";}}
+function render(){
+ const names=[state.name1,state.name2], init=[state.initial1,state.initial2], ins=[0,0], outs=[0,0];
+ state.entries.forEach(e=>e.type==="income"?ins[e.person]+=e.value:outs[e.person]+=e.value);
+ const bal=[init[0]+ins[0]-outs[0],init[1]+ins[1]-outs[1]];
+ $("n1top").textContent=names[0];$("n2top").textContent=names[1];
+ $("b1").textContent=money(bal[0]);$("b2").textContent=money(bal[1]);$("total").textContent=money(bal[0]+bal[1]);
+ $("s1").textContent="Entradas "+money(ins[0])+" • Gastos "+money(outs[0]);
+ $("s2").textContent="Entradas "+money(ins[1])+" • Gastos "+money(outs[1]);
+ $("p1").textContent=names[0];$("p2").textContent=names[1];
+ $("history").innerHTML=state.entries.length?state.entries.slice().reverse().map(e=>`<div class="item"><div style="min-width:0"><div><strong>${e.type==="income"?"➕":"➖"} ${esc(e.desc)}</strong></div><div class="muted">${esc(names[e.person])} • ${esc(e.date)}</div></div><div class="amount ${e.type==="income"?"in":"out"}"><strong>${e.type==="income"?"+":"−"}${money(e.value)}</strong></div></div>`).join(""):"<div class='muted' style='padding:20px;text-align:center'>Nenhum lançamento.</div>";
+ $("expense").classList.toggle("active",state.type==="expense");$("income").classList.toggle("active",state.type==="income");
+ $("add").textContent=state.type==="income"?"Adicionar entrada":"Adicionar saída";
+ $("p1").classList.toggle("active",state.person===0);$("p2").classList.toggle("active",state.person===1);
+}
+function syncInputs(){ $("name1").value=state.name1;$("name2").value=state.name2;$("initial1").value=state.initial1;$("initial2").value=state.initial2; }
+$("expense").onclick=()=>{state.type="expense";save();render()};
+$("income").onclick=()=>{state.type="income";save();render()};
+$("p1").onclick=()=>{state.person=0;save();render()};
+$("p2").onclick=()=>{state.person=1;save();render()};
+["name1","name2","initial1","initial2"].forEach(id=>$(id).addEventListener("input",()=>{save();render()}));
+$("form").addEventListener("submit",e=>{e.preventDefault();const d=$("desc").value.trim(),v=Number($("value").value);if(!d||!Number.isFinite(v)||v<=0){$("msg").textContent="Informe uma descrição e um valor válido.";return}state.entries.push({desc:d,value:v,person:state.person,type:state.type,date:new Intl.DateTimeFormat("pt-BR").format(new Date())});$("desc").value="";$("value").value="";save();render();$("msg").textContent="Lançamento salvo no aparelho."});
+$("clear").onclick=()=>{if(confirm("Apagar todo o histórico?")){state.entries=[];save();render();$("msg").textContent="Histórico apagado."}};
+$("export").onclick=()=>{save();const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="backup-gastos-cad.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+$("import").addEventListener("change",async e=>{const f=e.target.files[0];if(!f)return;try{const data=JSON.parse(await f.text());if(!data||!Array.isArray(data.entries))throw Error();state={...state,...data};syncInputs();save();render();$("msg").textContent="Backup importado com sucesso."}catch(err){$("msg").textContent="Arquivo de backup inválido."}e.target.value=""});
+syncInputs();render();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+</script>
+</body></html>
